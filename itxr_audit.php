@@ -97,8 +97,8 @@ foreach ($ips as $ipIndex => $ip) {
     fwrite(STDOUT, sprintf("[%d/%d] %s done\n", $ipIndex + 1, count($ips), $ip));
 }
 
-$majorityByColumn = computeMajorities($rows, count($headers));
-$outlierMap = computeOutlierMap($rows, $majorityByColumn);
+$referenceValueByColumn = computeMostCommonValues($rows, count($headers));
+$outlierMap = computeOutlierMap($rows, $referenceValueByColumn);
 
 $outputFilename = 'ITXR-AUDIT-' . date('Ymd-His') . '.xlsx';
 $outputPath = rtrim($outputDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $outputFilename;
@@ -129,7 +129,8 @@ Optional arguments:
 Output:
   Writes ITXR-AUDIT-YYYYmmdd-HHMMSS.xlsx
   - First row contains IP and all setting names
-  - Values that differ from a strict majority value in a setting column are highlighted yellow
+  - For each setting column, values that differ from the most common value are highlighted yellow
+  - If all values in a setting column are identical, no cells in that column are highlighted
 
 Notes:
   - Uses PHP SNMP extension (snmp2_get) when available.
@@ -254,7 +255,7 @@ function querySnmpValue(
     int $timeoutMs,
     int $retries
 ): array {
-    $oidWithDot = '.' . ltrim($oid, '.');
+    $oidWithDot = ltrim($oid, '.').'.1';
 
     if (function_exists('snmp2_get')) {
         $lastError = null;
@@ -324,60 +325,57 @@ function normalizeSnmpValue(?string $raw): string
  * @param array<int, array<int, string>> $rows
  * @return array<int, string|null>
  */
-function computeMajorities(array $rows, int $columnCount): array
+function computeMostCommonValues(array $rows, int $columnCount): array
 {
-    $majorities = array_fill(0, $columnCount, null);
+    $mostCommonValues = array_fill(0, $columnCount, null);
 
     for ($column = 1; $column < $columnCount; $column++) {
         $counts = [];
-        $nonEmpty = 0;
 
         foreach ($rows as $row) {
             $value = $row[$column] ?? '';
-            if ($value === '') {
-                continue;
-            }
-
-            $nonEmpty++;
             if (!isset($counts[$value])) {
                 $counts[$value] = 0;
             }
             $counts[$value]++;
         }
 
-        if ($nonEmpty === 0 || $counts === []) {
+        if ($counts === []) {
             continue;
         }
 
         arsort($counts);
-        $majorityValue = array_key_first($counts);
-        $majorityCount = $counts[$majorityValue];
+        $mostCommonValue = array_key_first($counts);
+        $distinctValueCount = count($counts);
 
-        if ($majorityCount > ($nonEmpty / 2)) {
-            $majorities[$column] = $majorityValue;
+        // If all values are identical in this column, do not highlight anything.
+        if ($distinctValueCount === 1) {
+            continue;
         }
+
+        $mostCommonValues[$column] = $mostCommonValue;
     }
 
-    return $majorities;
+    return $mostCommonValues;
 }
 
 /**
  * @param array<int, array<int, string>> $rows
- * @param array<int, string|null> $majorityByColumn
+ * @param array<int, string|null> $referenceValueByColumn
  * @return array<int, array<int, bool>>
  */
-function computeOutlierMap(array $rows, array $majorityByColumn): array
+function computeOutlierMap(array $rows, array $referenceValueByColumn): array
 {
     $outlierMap = [];
 
     foreach ($rows as $rowIndex => $row) {
-        foreach ($majorityByColumn as $column => $majorityValue) {
-            if ($column === 0 || $majorityValue === null) {
+        foreach ($referenceValueByColumn as $column => $referenceValue) {
+            if ($column === 0 || $referenceValue === null) {
                 continue;
             }
 
             $value = $row[$column] ?? '';
-            if ($value !== $majorityValue) {
+            if ($value !== $referenceValue) {
                 $outlierMap[$rowIndex][$column] = true;
             }
         }
