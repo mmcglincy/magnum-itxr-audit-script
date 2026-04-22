@@ -345,7 +345,7 @@ function computeMostCommonValues(array $rows, int $columnCount): array
         }
 
         arsort($counts);
-        $mostCommonValue = array_key_first($counts);
+        $mostCommonValue = (string) array_key_first($counts);
         $distinctValueCount = count($counts);
 
         // If all values are identical in this column, do not highlight anything.
@@ -374,8 +374,8 @@ function computeOutlierMap(array $rows, array $referenceValueByColumn): array
                 continue;
             }
 
-            $value = $row[$column] ?? '';
-            if ($value !== $referenceValue) {
+            $value = (string) ($row[$column] ?? '');
+            if ($value !== (string) $referenceValue) {
                 $outlierMap[$rowIndex][$column] = true;
             }
         }
